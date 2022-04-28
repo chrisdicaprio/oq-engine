@@ -134,6 +134,88 @@ def _project(self, points):
     return dists, mat @ self.uv1, mat @ self.uv2
 
 
+def get_rrup(self, mesh):
+    """
+    :param self: an object with attributes wld, normal, uv1, uv2, xyz
+    :param mesh: a mesh of sites
+
+    This is an optimized version specific to planar surfaces.
+    """
+    width, length, _ = self.wld
+    # we project all the points of the mesh on a plane that contains
+    # the surface (translating coordinates of the projections to a local
+    # 2d space) and at the same time calculate the distance to that
+    # plane.
+    dists, xx, yy = _project(self, mesh.xyz)
+    # the actual resulting distance is a square root of squares
+    # of a distance from a point to a plane that contains the surface
+    # and a distance from a projection of that point on that plane
+    # and a surface rectangle. we have former (``dists``), now we need
+    # to find latter.
+    #
+    # we process separately two coordinate components of the point
+    # projection. for abscissa we consider three possible cases:
+    #
+    #  I  . III .  II
+    #     .     .
+    #     0-----+                → x axis direction
+    #     |     |
+    #     +-----+
+    #     .     .
+    #     .     .
+    #
+    mxx = numpy.select(
+        condlist=[
+            # case "I": point on the left hand side from the rectangle
+            xx < 0,
+            # case "II": point is on the right hand side
+            xx > length
+            # default -- case "III": point is in between vertical sides
+        ],
+        choicelist=[
+            # case "I": we need to consider distance between a point
+            # and a line containing left side of the rectangle
+            xx,
+            # case "II": considering a distance between a point and
+            # a line containing the right side
+            xx - length
+        ],
+        # case "III": abscissa doesn't have an effect on a distance
+        # to the rectangle
+        default=0
+    )
+    # for ordinate we do the same operation (again three cases):
+    #
+    #    I
+    #  - - - 0---+ - - -         ↓ y axis direction
+    #   III  |   |
+    #  - - - +---+ - - -
+    #    II
+    #
+    myy = numpy.select(
+        condlist=[
+            # case "I": point is above the rectangle top edge
+            yy < 0,
+            # case "II": point is below the rectangle bottom edge
+            yy > width
+            # default -- case "III": point is in between lines containing
+            # top and bottom edges
+        ],
+        choicelist=[
+            # case "I": considering a distance to a line containing
+            # a top edge
+            yy,
+            # case "II": considering a distance to a line containing
+            # a bottom edge
+            yy - width
+        ],
+        # case "III": ordinate doesn't affect the distance
+        default=0
+    )
+    # combining distance on a plane with distance to a plane
+    return numpy.sqrt(dists ** 2 + mxx ** 2 + myy ** 2)
+
+
 class PlanarSurface(BaseSurface):
     """
     Planar rectangular surface with two sides parallel to the Earth surface.
@@ -160,6 +242,8 @@ class PlanarSurface(BaseSurface):
         is not parallel to the bottom edge, if top edge differs in length
         from the bottom one, or if mesh spacing is not positive.
     """
+    get_min_distance = get_rrup
+
     @property
     def surface_nodes(self):
         """
@@ -426,88 +510,6 @@ class PlanarSurface(BaseSurface):
                    self.uv2 * yy.reshape(yy.shape + (1, )) +
                    self.normal * dists.reshape(dists.shape + (1, )))
         return geo_utils.cartesian_to_spherical(vectors)
-
-    def get_min_distance(self, mesh):
-        """
-        See :meth:`superclass' method
-        <openquake.hazardlib.geo.surface.base.BaseSurface.get_min_distance>`.
-
-        This is an optimized version specific to planar surface that doesn't
-        make use of the mesh.
-        """
-        width, length = self.wld[:2]
-        # we project all the points of the mesh on a plane that contains
-        # the surface (translating coordinates of the projections to a local
-        # 2d space) and at the same time calculate the distance to that
-        # plane.
-        dists, xx, yy = _project(self, mesh.xyz)
-        # the actual resulting distance is a square root of squares
-        # of a distance from a point to a plane that contains the surface
-        # and a distance from a projection of that point on that plane
-        # and a surface rectangle. we have former (``dists``), now we need
-        # to find latter.
-        #
-        # we process separately two coordinate components of the point
-        # projection. for abscissa we consider three possible cases:
-        #
-        #  I  . III .  II
-        #     .     .
-        #     0-----+                → x axis direction
-        #     |     |
-        #     +-----+
-        #     .     .
-        #     .     .
-        #
-        mxx = numpy.select(
-            condlist=[
-                # case "I": point on the left hand side from the rectangle
-                xx < 0,
-                # case "II": point is on the right hand side
-                xx > length
-                # default -- case "III": point is in between vertical sides
-            ],
-            choicelist=[
-                # case "I": we need to consider distance between a point
-                # and a line containing left side of the rectangle
-                xx,
-                # case "II": considering a distance between a point and
-                # a line containing the right side
-                xx - length
-            ],
-            # case "III": abscissa doesn't have an effect on a distance
-            # to the rectangle
-            default=0
-        )
-        # for ordinate we do the same operation (again three cases):
-        #
-        #    I
-        #  - - - 0---+ - - -         ↓ y axis direction
-        #   III  |   |
-        #  - - - +---+ - - -
-        #    II
-        #
-        myy = numpy.select(
-            condlist=[
-                # case "I": point is above the rectangle top edge
-                yy < 0,
-                # case "II": point is below the rectangle bottom edge
-                yy > width
-                # default -- case "III": point is in between lines containing
-                # top and bottom edges
-            ],
-            choicelist=[
-                # case "I": considering a distance to a line containing
-                # a top edge
-                yy,
-                # case "II": considering a distance to a line containing
-                # a bottom edge
-                yy - width
-            ],
-            # case "III": ordinate doesn't affect the distance
-            default=0
-        )
-        # combining distance on a plane with distance to a plane
-        return numpy.sqrt(dists ** 2 + mxx ** 2 + myy ** 2)
 
     def get_closest_points(self, mesh):
         """
