@@ -1092,9 +1092,15 @@ class PmapMaker(object):
             nbytes += 8 * dparams * nsites
         return nbytes
 
-    def _get_ctxs(self, rups, sites, srcid):
+    def _get_ctxs(self, src, sites):
         with self.cmaker.ctx_mon:
-            ctxs = self.cmaker.get_ctxs(rups, sites, srcid)
+            if hasattr(src, 'location'):
+                # I need a faster version of get_ctxs
+                rups = self.cmaker._gen_rups(src, sites)
+                ctxs = self.cmaker.get_ctxs(rups, sites, src.id)
+            else:
+                rups = self.cmaker._ruptures(src, sites)
+                ctxs = self.cmaker.get_ctxs(rups, sites, src.id)
             if self.fewsites:  # keep rupdata in memory
                 for ctx in ctxs:
                     self.rupdata.append(ctx)
@@ -1113,7 +1119,7 @@ class PmapMaker(object):
             t0 = time.time()
             if self.fewsites:
                 sites = sites.complete
-            ctxs = self._get_ctxs(cm._gen_rups(src, sites), sites, src.id)
+            ctxs = self._get_ctxs(src, sites)
             allctxs.extend(ctxs)
             nctxs = len(ctxs)
             nsites = sum(len(ctx) for ctx in ctxs)
@@ -1139,7 +1145,7 @@ class PmapMaker(object):
         for src, sites in self.srcfilter.filter(self.group):
             t0 = time.time()
             pm = ProbabilityMap(cm.imtls.size, len(cm.gsims))
-            ctxs = self._get_ctxs(cm._ruptures(src), sites, src.id)
+            ctxs = self._get_ctxs(src, sites)
             nctxs = len(ctxs)
             nsites = sum(len(ctx) for ctx in ctxs)
             if nsites:
