@@ -157,7 +157,7 @@ def get_csm(oq, full_lt, h5=None):
                               h5=h5 if h5 else None).reduce()
     if len(smdict) > 1:  # really parallel
         parallel.Starmap.shutdown()  # save memory
-    fix_geometry_sections(smdict)
+
     logging.info('Applying uncertainties')
     groups = _build_groups(full_lt, smdict)
 
@@ -174,13 +174,14 @@ def get_csm(oq, full_lt, h5=None):
             for src in group:
                 collapse_nphc(src)
 
-    return _get_csm(full_lt, groups)
+    csm = _get_csm(full_lt, groups)
+    csm.sections = get_geometry_sections(smdict)
+    return csm
 
 
-def fix_geometry_sections(smdict):
+def get_geometry_sections(smdict):
     """
-    If there are MultiFaultSources, fix the sections according to the
-    GeometryModels (if any).
+    If there are MultiFaultSources, get the sections as a dictionary
     """
     gmodels = []
     smodels = []
@@ -203,7 +204,6 @@ def fix_geometry_sections(smdict):
     nrml.check_unique(
         sec_ids, 'section ID in files ' + ' '.join(gfiles))
     sections = {sid: sections[sid] for sid in sorted(sections)}
-    # section_arrays = [sec.geom() for sec in sections.values()]
 
     # fix the MultiFaultSources
     for smod in smodels:
@@ -213,6 +213,8 @@ def fix_geometry_sections(smdict):
                     if not sections:
                         raise RuntimeError('Missing geometryModel files!')
                     src.set_sections(sections)
+
+    return sections
 
 
 def _groups_ids(smlt_dir, smdict, fnames):
