@@ -216,8 +216,16 @@ def get_geometry_sections(smdict):
                 if hasattr(src, 'set_sections'):
                     if not sections:
                         raise RuntimeError('Missing geometryModel files!')
+                    # `i` is the index of the rupture of the `n` admitted by
+                    # this source. In this loop we check that all the IDs of
+                    # the sections composing one rupture have a object in the
+                    # sections dictionary describing their geometry.
+                    msg = 'Rupture #{:d}: section "{:s}" does not exist'
+                    for i in range(len(src.mags)):
+                        for idx in src.rupture_idxs[i]:
+                            if idx not in sections:
+                                raise ValueError(msg.format(i, idx))
                     src.set_sections(sections)
-
     return sections
 
 

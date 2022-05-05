@@ -114,18 +114,7 @@ class MultiFaultSource(BaseSeismicSource):
 
         Set the attribute .sections to the passed dictionary
         """
-        # Check
-        assert sections
-        # `i` is the index of the rupture of the `n` admitted by this source.
-        # In this loop we check that all the IDs of the sections composing one
-        # rupture have a object in the sections dictionary describing their
-        # geometry.
         self.sections = sections
-        msg = 'Rupture #{:d}: section "{:s}" does not exist'
-        for i in range(len(self.mags)):
-            for idx in self.rupture_idxs[i]:
-                if idx not in sections:
-                    raise ValueError(msg.format(i, idx))
 
     def iter_ruptures(self, fromidx=0, untilidx=None, **kwargs):
         """
