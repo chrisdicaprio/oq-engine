@@ -116,11 +116,6 @@ class MultiFaultSource(BaseSeismicSource):
         """
         # Check
         assert sections
-
-        # Assign to the surface the index of the corresponding section
-        for key in sections:
-            sections[key].surface.suid = key
-
         # `i` is the index of the rupture of the `n` admitted by this source.
         # In this loop we check that all the IDs of the sections composing one
         # rupture have a object in the sections dictionary describing their

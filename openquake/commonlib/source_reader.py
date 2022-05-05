@@ -157,6 +157,7 @@ def get_csm(oq, full_lt, h5=None):
                               h5=h5 if h5 else None).reduce()
     if len(smdict) > 1:  # really parallel
         parallel.Starmap.shutdown()  # save memory
+    sections = get_geometry_sections(smdict)
 
     logging.info('Applying uncertainties')
     groups = _build_groups(full_lt, smdict)
@@ -175,7 +176,7 @@ def get_csm(oq, full_lt, h5=None):
                 collapse_nphc(src)
 
     csm = _get_csm(full_lt, groups)
-    csm.sections = get_geometry_sections(smdict)
+    csm.sections = sections
     return csm
 
 
@@ -203,7 +204,10 @@ def get_geometry_sections(smdict):
         sections.update(gmod.sections)
     nrml.check_unique(
         sec_ids, 'section ID in files ' + ' '.join(gfiles))
-    sections = {sid: sections[sid] for sid in sorted(sections)}
+    sections = {suid: sections[suid] for suid in sorted(sections)}
+    # assign to the surface the index of the corresponding section
+    for suid, sect in enumerate(sections.values()):
+        sect.surface.suid = suid
 
     # fix the MultiFaultSources
     for smod in smodels:
