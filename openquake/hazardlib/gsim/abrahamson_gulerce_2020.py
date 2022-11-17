@@ -22,6 +22,7 @@ Module exports :class:`AbrahamsonGulerce2020SInter`,
                :class:`AbrahamsonGulerce2020SSlab`
 """
 import numpy as np
+from scipy.interpolate import interp1d
 from openquake.hazardlib.gsim.base import GMPE, CoeffsTable, add_alias
 from openquake.hazardlib import const
 from openquake.hazardlib.imt import PGA, SA
@@ -334,7 +335,8 @@ def get_acceleration_on_reference_rock(C, trt, region, ctx, apply_adjustment):
             get_anelastic_attenuation_term(C, region, ctx.rrup) +
             get_rupture_depth_scaling_term(C, trt, ctx) +
             get_inslab_scaling_term(C, trt, region, ctx.mag, ctx.rrup) +
-            get_site_amplification_term(C, region, vs30, null_pga1000))
+            get_site_amplification_term(C, region, vs30, null_pga1000) +
+            get_backarc_term (trt, PGA(), ctx))
 
 
 def get_mean_acceleration(C, trt, region, ctx, pga1000, apply_adjustment):
@@ -535,6 +537,47 @@ def get_epistemic_adjustment(C, rrup):
     rrup_norm = np.clip(rrup, 50.0, 500.0) / 100.0
     return C["e1"] + C["e2"] * rrup_norm + C["e3"] * (rrup_norm ** 2.0)
 
+def get_backarc_term(trt, imt, ctx):
+
+    """ The backarc correction factors to be applied with the ground motion prediction. In the NZ context, it is applied to only subduction intraslab events.
+    It is essentially the correction factor taken from BC Hydro 2016. Abrahamson et al. (2016) Earthquake Spectra.
+    The correction is applied only for backarc sites as function of distance."""
+
+    periods =  [0.0, 0.02, 0.05, 0.075, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.5, 10.0]
+    theta7s = [1.0988, 1.0988, 1.2536, 1.4175, 1.3997, 1.3582, 1.1648, 0.994, 0.8821, 0.7046, 0.5799, 0.5021, 0.3687, 0.1746,
+       -0.082 , -0.2821, -0.4108, -0.4466, -0.4344, -0.4368, -0.4586, -0.4433, -0.4828]
+    theta8s = [-1.42, -1.42, -1.65, -1.8 , -1.8 , -1.69, -1.49, -1.3 , -1.18, -0.98, -0.82, -0.7 , -0.54, -0.34, -0.05,  0.12,  0.25,  0.3,
+        0.3,  0.3,  0.3,  0.3,  0.3]
+    period  = imt.period
+
+    w_epi_factor = 1.008
+
+    theta7_itp = interp1d(np.log(periods[1:]), theta7s[1:])
+    theta8_itp = interp1d(np.log(periods[1:]), theta8s[1:])
+    # Note that there is no correction for PGV. Hence, I make theta7 and theta8 as 0 for periods < 0.
+    if period < 0:
+        theta7 = 0.0
+        theta8 = 0.0
+    elif (period >= 0 and period < 0.02):
+        theta7 = 1.0988
+        theta8 = -1.42
+    else:
+        theta7 = theta7_itp(np.log(period))
+        theta8 = theta8_itp(np.log(period))
+
+    dists = ctx.rrup
+
+    if trt == const.TRT.SUBDUCTION_INTRASLAB:
+        min_dist = 85.0
+        backarc = np.bool_(ctx.backarc)
+        f_faba = np.zeros_like(dists)
+        fixed_dists = dists[backarc]
+        fixed_dists[fixed_dists < min_dist] = min_dist
+        f_faba[backarc] = theta7 + theta8*np.log(fixed_dists/40.0)
+        return f_faba*w_epi_factor
+    else:
+        f_faba = np.zeros_like(dists)
+        return f_faba
 
 class AbrahamsonGulerce2020SInter(GMPE):
     """
@@ -655,7 +698,8 @@ class AbrahamsonGulerce2020SInter(GMPE):
         for m, imt in enumerate(imts):
             C = self.COEFFS[imt]
             mean[m] = get_mean_acceleration(C, trt, self.region, ctx, pga1000,
-                                            self.apply_usa_adjustment)
+                                            self.apply_usa_adjustment) + get_backarc_term(trt, imt, ctx)
+            #mean[m] = get_backarc_term(trt, imt, ctx)
             if self.sigma_mu_epsilon:
                 # Apply an epistmic adjustment factor
                 mean[m] += (self.sigma_mu_epsilon *
@@ -711,6 +755,7 @@ class AbrahamsonGulerce2020SSlab(AbrahamsonGulerce2020SInter):
     """
     #: Required rupture parameters are magnitude and top-of-rupture depth
     REQUIRES_RUPTURE_PARAMETERS = {'mag', 'ztor'}
+    REQUIRES_SITES_PARAMETERS = {'vs30', 'backarc'}
 
     #: Supported tectonic region type is subduction inslab
     DEFINED_FOR_TECTONIC_REGION_TYPE = const.TRT.SUBDUCTION_INTRASLAB

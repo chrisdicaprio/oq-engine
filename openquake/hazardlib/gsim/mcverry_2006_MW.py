@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 #
-# Copyright (C) 2014-2023 GEM Foundation
+# Copyright (C) 2014-2022 GEM Foundation
 #
 # OpenQuake is free software: you can redistribute it and/or modify it
 # under the terms of the GNU Affero General Public License as published
@@ -17,10 +17,10 @@
 # along with OpenQuake. If not, see <http://www.gnu.org/licenses/>.
 
 """
-Module exports :class:`McVerry2006Asc`, :class:`McVerry2006SInter`,
-:class:`McVerry2006SSlab`, :class:`McVerry2006Volc`,
-:class:`McVerry2006AscSC`, :class:`McVerry2006SInterSC`,
-:class:`McVerry2006SSlabSC`, :class:`McVerry2006VolcSC`.
+Module exports :class:`McVerry2006AscMW`, :class:`McVerry2006SInterMW`,
+:class:`McVerry2006SSlabMW`, :class:`McVerry2006VolcMW`,
+:class:`McVerry2006AscSCMW`, :class:`McVerry2006SInterSCMW`,
+:class:`McVerry2006SSlabSCMW`, :class:`McVerry2006VolcSCMW`.
 """
 import numpy as np
 import shapely
@@ -356,8 +356,25 @@ def _get_stddevs(kind, C, ctx, additional_sigma=0.):
 
     return [np.sqrt(sigma_intra**2 + tau**2), tau, sigma_intra]
 
+def _mag_weighting(mean, period, mag):
+    '''
+    Applies magnitude-weighting on the original McVerry 2006 GMPE
+    input: unmodified mean, period, magnitude
+    returns magnitude weighted mean
 
-class McVerry2006Asc(GMPE):
+    Implemented by Sanjay Bora on 02.05.2022
+    Note: there is a bug in the Abbott implementation (06-07-2017). The way period is extracted from the imt.
+        '''
+
+    # Original Seed and Idriss 1982. Also see Gerstenberger et al. (2014) EQS paper.
+    if period < 0.51:
+        mean = np.log(np.exp(mean) * 0.075 * mag ** 1.285)
+    else:
+        mean = mean
+
+    return mean
+
+class McVerry2006AscMW(GMPE):
     """
     Implements GMPE developed by G. McVerry, J. Zhao, N.A. Abrahamson,
     P. Somerville published as "New Zealand Acceleration Response Spectrum
@@ -409,16 +426,16 @@ class McVerry2006Asc(GMPE):
         const.StdDev.TOTAL, const.StdDev.INTER_EVENT, const.StdDev.INTRA_EVENT}
 
     #: The legacy implementation of the McVerry model takes vs30 and maps
-    #: to New Zealand's categorical site classification scheme
+    #  to New Zealand's categorical site classification scheme
     REQUIRES_SITES_PARAMETERS = {'vs30'}
 
     #: Required rupture parameters are magnitude, and rake and hypocentral
-    #: depth rake is for determining fault style flags. Hypo depth is for
-    #: subduction GMPEs
+    # depth rake is for determining fault style flags. Hypo depth is for
+    # subduction GMPEs
     REQUIRES_RUPTURE_PARAMETERS = {'mag', 'rake', 'hypo_depth'}
 
     #: Required distance measure is RRup (paragraphy 3, page 26) which is
-    #: defined as nearest distance to the source.
+    # defined as nearest distance to the source.
     REQUIRES_DISTANCES = {'rrup'}
 
     def compute(self, ctx: np.recarray, imts, mean, sig, tau, phi):
@@ -469,6 +486,10 @@ class McVerry2006Asc(GMPE):
             # return log
             mean[m] = np.log(np.exp(lnSAp_ABCD) *
                              (np.exp(lnPGA_ABCD) / np.exp(lnPGAp_ABCD)))
+
+            # Apply magnitude weighting: Sanjay Bora on 02.05.2022
+            period = imt.period # Note here is the bug in Abott's implementation. 
+            mean[m] = _mag_weighting(mean[m], period, ctx.mag)
 
             # Compute standard deviations
             C_STD = self.COEFFS_STD[imt]
@@ -525,7 +546,7 @@ class McVerry2006Asc(GMPE):
     """)
 
 
-class McVerry2006SInter(McVerry2006Asc):
+class McVerry2006SInterMW(McVerry2006AscMW):
     """
     Extend :class:`McVerry2006Asc` for Subduction Interface events (SInter)
 
@@ -549,7 +570,7 @@ class McVerry2006SInter(McVerry2006Asc):
     DEFINED_FOR_TECTONIC_REGION_TYPE = const.TRT.SUBDUCTION_INTERFACE
 
 
-class McVerry2006SSlab(McVerry2006Asc):
+class McVerry2006SSlabMW(McVerry2006AscMW):
     """
     Extend :class:`McVerry2006Asc` for Subduction Intraslab events (SSlab)
 
@@ -573,7 +594,7 @@ class McVerry2006SSlab(McVerry2006Asc):
     DEFINED_FOR_TECTONIC_REGION_TYPE = const.TRT.SUBDUCTION_INTRASLAB
 
 
-class McVerry2006Volc(McVerry2006Asc):
+class McVerry2006VolcMW(McVerry2006AscMW):
     """
     Extend :class:`McVerry2006Asc` for earthquakes with Volcanic paths (Volc)
 
@@ -600,7 +621,7 @@ class McVerry2006Volc(McVerry2006Asc):
     DEFINED_FOR_TECTONIC_REGION_TYPE = const.TRT.VOLCANIC
 
 
-class McVerry2006AscSC(McVerry2006Asc):
+class McVerry2006AscSCMW(McVerry2006AscMW):
 
     kind = "asc_sc"
     #: Uses NZS1170.5 site classification. Calls of 'A' or 'B' yield the same
@@ -608,7 +629,7 @@ class McVerry2006AscSC(McVerry2006Asc):
     REQUIRES_SITES_PARAMETERS = {'siteclass'}
 
 
-class McVerry2006SInterSC(McVerry2006AscSC):
+class McVerry2006SInterSCMW(McVerry2006AscSCMW):
     """
     Extend :class:`McVerry2006AscSC` for Subduction Interface events (SInter)
 
@@ -628,7 +649,7 @@ class McVerry2006SInterSC(McVerry2006AscSC):
     DEFINED_FOR_TECTONIC_REGION_TYPE = const.TRT.SUBDUCTION_INTERFACE
 
 
-class McVerry2006SSlabSC(McVerry2006AscSC):
+class McVerry2006SSlabSCMW(McVerry2006AscSCMW):
     """
     Extend :class:`McVerry2006AscSC` for Subduction Intraslab events (SSlab)
 
@@ -648,7 +669,7 @@ class McVerry2006SSlabSC(McVerry2006AscSC):
     DEFINED_FOR_TECTONIC_REGION_TYPE = const.TRT.SUBDUCTION_INTRASLAB
 
 
-class McVerry2006VolcSC(McVerry2006AscSC):
+class McVerry2006VolcSCMW(McVerry2006AscSCMW):
     """
     Extend :class:`McVerry2006AscSC` for earthquakes with Volcanic paths (Volc)
 
@@ -671,7 +692,7 @@ class McVerry2006VolcSC(McVerry2006AscSC):
     DEFINED_FOR_TECTONIC_REGION_TYPE = const.TRT.VOLCANIC
 
 
-class McVerry2006Chch(McVerry2006AscSC):
+class McVerry2006ChchMW(McVerry2006AscSCMW):
     """
     Extends McVerry2006AscSC to implement modifications required for the
     Canterbury Seismic Hazard Model (CSHM).
@@ -682,10 +703,8 @@ class McVerry2006Chch(McVerry2006AscSC):
 
     kind = "chch"
     additional_sigma = 0
-    REQUIRES_RUPTURE_PARAMETERS = (
-        McVerry2006AscSC.REQUIRES_RUPTURE_PARAMETERS | {"in_cshm"})
+    REQUIRES_COMPUTED_PARAMETERS = {"in_cshm"}
 
-    # this is meant for non-point ruptures
     def set_parameters(self, rup):
         """
         Checks if any part of the rupture surface mesh is located within the
@@ -768,6 +787,10 @@ class McVerry2006Chch(McVerry2006AscSC):
                              (np.exp(lnPGA_ABCD) /
                               np.exp(lnPGAp_ABCD))) + stress_drop_factor
 
+            # Magnitude weighting applied.
+            period = imt.period
+            mean[m] = _mag_weighting(mean[m], period, ctx.mag)
+
             # Compute standard deviations
             C_STD = self.COEFFS_STD[imt]
             sig[m], tau[m], phi[m] = _get_stddevs(
@@ -805,7 +828,7 @@ class McVerry2006Chch(McVerry2006AscSC):
     """)
 
 
-class McVerry2006ChchStressDrop(McVerry2006Chch):
+class McVerry2006ChchStressDropMW(McVerry2006ChchMW):
     """
     Extend :class:`McVerry2006AscChch` to implement the 'stress drop'
     factors developed in:
@@ -821,7 +844,7 @@ class McVerry2006ChchStressDrop(McVerry2006Chch):
     kind = "drop"
 
 
-class McVerry2006ChchAdditionalSigma(McVerry2006Chch):
+class McVerry2006ChchAdditionalSigmaMW(McVerry2006ChchMW):
     """
     Extend :class:`McVerry2006AscChch` to implement the 'additional
     epistemic uncertainty' version of the model in:
