@@ -815,7 +815,7 @@ def write_source_model(dest, sources_or_groups, name=None,
     if sections:
         # surfaces have no 'id', so we use sections instead, with an 'id'
         # starting from 0; this is necessary for conversion to hdf5
-        secnodes = [Node('section', {'id': str(i)},
+        secnodes = [Node('section', {'id': prefix + str(i)},
                          nodes=[obj_to_node(sec)])
                     for i, sec in enumerate(sections)]
         gmodel = Node("geometryModel", attrs, nodes=secnodes)
